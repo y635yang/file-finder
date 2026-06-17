@@ -2,3 +2,6 @@ fastapi
 uvicorn[standard]
 anthropic
 python-dotenv
+pypdf
+python-docx
+python-pptx

@@ -4,6 +4,10 @@ import pathlib
 import subprocess
 from typing import Optional
 
+import docx
+import pptx
+from pypdf import PdfReader
+
 import anthropic
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
@@ -68,6 +72,33 @@ def collect_files(root: pathlib.Path) -> list:
         ):
             results.append(str(path))
     return results
+
+
+def extract_text(path: pathlib.Path, max_chars: int = 3000) -> str:
+    """Extract a text snippet from a PDF, Word, or PowerPoint file."""
+    try:
+        ext = path.suffix.lower()
+        if ext == ".pdf":
+            reader = PdfReader(str(path))
+            text = " ".join(page.extract_text() or "" for page in reader.pages)
+        elif ext in {".docx", ".doc"}:
+            doc = docx.Document(str(path))
+            text = " ".join(p.text for p in doc.paragraphs)
+        elif ext in {".pptx", ".ppt"}:
+            prs = pptx.Presentation(str(path))
+            parts = []
+            for slide in prs.slides:
+                for shape in slide.shapes:
+                    if shape.has_text_frame:
+                        parts.append(shape.text_frame.text)
+            text = " ".join(parts)
+        else:
+            return ""
+        # Collapse whitespace and cap length
+        text = " ".join(text.split())
+        return text[:max_chars]
+    except Exception:
+        return ""
 
 
 def parse_json_response(text: str):
@@ -136,29 +167,78 @@ async def search(req: SearchRequest):
     if not files:
         return {"matches": [], "folder": str(folder_path)}
 
-    rank_resp = client.messages.create(
+    # --- Pass 1: filename-only ranking ---
+    names_text = "\n".join(f for f in files)
+    name_resp = client.messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=1000,
+        max_tokens=800,
         messages=[
             {
                 "role": "user",
                 "content": (
                     f'I\'m looking for: "{file_query}"\n\n'
-                    "From this list of files, return a JSON array of the most relevant paths "
-                    "(best match first, max 8). Omit files that are clearly irrelevant. "
-                    "Return only the JSON array.\n\n"
-                    + "\n".join(files)
+                    "From these file paths, return a JSON object with:\n"
+                    '  "confident": true if 1+ filenames clearly match the query, false otherwise\n'
+                    '  "matches": array of matching file paths (best first, max 8) — '
+                    "only populated if confident is true\n\n"
+                    "Return only valid JSON.\n\n"
+                    + names_text
                 ),
             }
         ],
     )
 
     try:
-        ranked = parse_json_response(rank_resp.content[0].text)
+        name_result = parse_json_response(name_resp.content[0].text)
     except (json.JSONDecodeError, IndexError):
-        ranked = files[:8]
+        name_result = {"confident": False, "matches": []}
 
-    return {"matches": ranked, "folder": str(folder_path)}
+    if name_result.get("confident") and name_result.get("matches"):
+        ranked = [{"path": p, "excerpt": ""} for p in name_result["matches"]]
+        return {"matches": ranked, "folder": str(folder_path), "searched": "filename"}
+
+    # --- Pass 2: content-based ranking (no filename match found) ---
+    candidates = files[:20]
+    file_summaries = []
+    for f in candidates:
+        snippet = extract_text(pathlib.Path(f))
+        file_summaries.append({
+            "path": f,
+            "name": pathlib.Path(f).name,
+            "snippet": snippet or "(could not read content)",
+        })
+
+    summaries_text = "\n\n".join(
+        f'FILE: {s["path"]}\nNAME: {s["name"]}\nCONTENT: {s["snippet"]}'
+        for s in file_summaries
+    )
+
+    content_resp = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=1500,
+        messages=[
+            {
+                "role": "user",
+                "content": (
+                    f'I\'m looking for: "{file_query}"\n\n'
+                    "Below are files with their content. Return a JSON array of objects for the "
+                    "most relevant files (best match first, max 8). Only include files whose "
+                    "content is relevant to the query. Each object must have:\n"
+                    '  "path": the full file path\n'
+                    '  "excerpt": a short 1-2 sentence quote or summary showing why it matches\n\n'
+                    "Return only valid JSON.\n\n"
+                    + summaries_text
+                ),
+            }
+        ],
+    )
+
+    try:
+        ranked = parse_json_response(content_resp.content[0].text)
+    except (json.JSONDecodeError, IndexError):
+        ranked = [{"path": f, "excerpt": ""} for f in files[:8]]
+
+    return {"matches": ranked, "folder": str(folder_path), "searched": "content"}
 
 
 @app.post("/compose")
