@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>File Finder</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f5f7;
+      color: #1d1d1f;
+      min-height: 100vh;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 48px 16px;
+    }
+
+    .container { width: 100%; max-width: 680px; }
+
+    h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 6px; }
+    .subtitle { color: #6e6e73; font-size: 15px; margin-bottom: 32px; }
+
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 28px;
+      box-shadow: 0 2px 12px rgba(0,0,0,.08);
+      margin-bottom: 20px;
+    }
+
+    label { display: block; font-size: 13px; font-weight: 600; color: #6e6e73; margin-bottom: 6px; }
+
+    textarea, input[type="text"], input[type="email"] {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1.5px solid #d2d2d7;
+      border-radius: 10px;
+      font-size: 15px;
+      font-family: inherit;
+      transition: border-color .15s;
+      background: #fafafa;
+      color: #1d1d1f;
+    }
+    textarea:focus, input:focus { outline: none; border-color: #0071e3; background: #fff; }
+    textarea { resize: vertical; min-height: 80px; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 22px;
+      border: none;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity .15s, transform .1s;
+    }
+    .btn:active { transform: scale(.98); }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+    .btn-primary { background: #0071e3; color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: #0077ed; }
+    .btn-send { background: #34c759; color: #fff; }
+    .btn-send:hover:not(:disabled) { background: #30b552; }
+
+    .status { font-size: 13px; margin-top: 10px; min-height: 18px; color: #6e6e73; }
+    .status.error { color: #ff3b30; }
+    .status.success { color: #34c759; }
+
+    .folder-badge {
+      display: inline-block;
+      background: #f0f0f5;
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 13px;
+      color: #6e6e73;
+      margin-top: 12px;
+      word-break: break-all;
+    }
+
+    .results-list { list-style: none; margin-top: 16px; }
+    .results-list li {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      border: 1.5px solid #d2d2d7;
+      border-radius: 10px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: border-color .15s, background .15s;
+      font-size: 14px;
+    }
+    .results-list li:hover { border-color: #0071e3; background: #f0f7ff; }
+    .results-list li.added { border-color: #34c759; background: #f0fff4; cursor: default; }
+
+    .file-icon { font-size: 22px; flex-shrink: 0; }
+    .file-info { flex: 1; min-width: 0; }
+    .file-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .file-path { font-size: 12px; color: #6e6e73; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+    .add-badge {
+      flex-shrink: 0;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 20px;
+      background: #0071e3;
+      color: #fff;
+    }
+    .results-list li.added .add-badge { background: #34c759; }
+
+    .section-title { font-size: 16px; font-weight: 700; margin-bottom: 16px; }
+
+    /* Tray */
+    .tray {
+      border: 2px dashed #d2d2d7;
+      border-radius: 12px;
+      padding: 14px;
+      min-height: 56px;
+      margin-bottom: 16px;
+      transition: border-color .2s;
+    }
+    .tray.has-items { border-style: solid; border-color: #0071e3; }
+    .tray-empty { font-size: 13px; color: #aeaeb2; font-style: italic; }
+    .tray-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      background: #f0f7ff;
+      border-radius: 8px;
+      margin-bottom: 8px;
+      font-size: 14px;
+    }
+    .tray-item:last-child { margin-bottom: 0; }
+    .tray-item-icon { font-size: 18px; flex-shrink: 0; }
+    .tray-item-name { flex: 1; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tray-item-path { font-size: 11px; color: #6e6e73; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tray-remove {
+      flex-shrink: 0;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: #ff3b30;
+      font-size: 15px;
+      padding: 2px 4px;
+      border-radius: 4px;
+      line-height: 1;
+    }
+    .tray-remove:hover { background: #fff0ef; }
+    .tray-count {
+      font-size: 12px;
+      font-weight: 700;
+      color: #0071e3;
+      margin-bottom: 10px;
+    }
+
+    #email-section { display: none; }
+    .field-gap { margin-bottom: 14px; }
+
+    /* Root folders */
+    .root-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 12px;
+      background: #f5f5f7;
+      border-radius: 8px;
+      margin-bottom: 8px;
+      font-size: 13px;
+      font-family: "SF Mono", "Fira Code", monospace;
+      color: #3a3a3c;
+      word-break: break-all;
+    }
+    .root-item span { flex: 1; }
+    .btn-remove { flex-shrink: 0; background: none; border: none; cursor: pointer; color: #ff3b30; font-size: 16px; line-height: 1; padding: 2px 4px; border-radius: 4px; }
+    .btn-remove:hover { background: #fff0ef; }
+    .add-root-row { display: flex; gap: 10px; margin-top: 4px; }
+    .add-root-row input { flex: 1; }
+    .btn-add { background: #f0f0f5; color: #1d1d1f; font-size: 14px; padding: 10px 16px; border-radius: 10px; border: none; cursor: pointer; font-weight: 600; white-space: nowrap; }
+    .btn-add:hover { background: #e5e5ea; }
+    .empty-roots { font-size: 13px; color: #aeaeb2; font-style: italic; margin-bottom: 8px; }
+
+    .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>File Finder</h1>
+  <p class="subtitle">Ask in plain English — Claude will find your files and open a draft in Mail.</p>
+
+  <!-- Root Folders -->
+  <div class="card">
+    <div class="section-title">📁 Search scope <span style="font-size:13px;font-weight:400;color:#aeaeb2;">(optional)</span></div>
+    <p style="font-size:13px;color:#6e6e73;margin-bottom:14px;">Pin folders to limit searches to those locations and their subfolders. If none are set, your entire home directory is searched.</p>
+    <div id="roots-list"></div>
+    <div class="add-root-row">
+      <input type="text" id="new-root" placeholder="/Users/you/OneDrive  or  ~/Documents" />
+      <button class="btn-add" onclick="addRoot()">+ Add folder</button>
+    </div>
+  </div>
+
+  <!-- Search -->
+  <div class="card">
+    <div class="section-title">Find a file</div>
+    <label for="query">What are you looking for?</label>
+    <textarea id="query" placeholder='e.g. "Can you find me the purchase agreement under my OneDrive Life and Home Buying folder?"'></textarea>
+    <br /><br />
+    <button class="btn btn-primary" id="search-btn" onclick="doSearch()">
+      <span id="search-label">Search</span>
+    </button>
+    <div class="status" id="search-status"></div>
+    <div id="folder-badge-wrap"></div>
+    <ul class="results-list" id="results"></ul>
+  </div>
+
+  <!-- Attachment tray -->
+  <div class="card" id="tray-card" style="display:none;">
+    <div class="section-title">📎 Attachments</div>
+    <div class="tray has-items" id="tray"></div>
+    <button class="btn btn-primary" onclick="showCompose()" id="compose-trigger">
+      Compose email →
+    </button>
+  </div>
+
+  <!-- Compose -->
+  <div class="card" id="email-section">
+    <div class="section-title">Compose email</div>
+
+    <div class="field-gap">
+      <label>Attachments</label>
+      <div class="tray has-items" id="compose-tray"></div>
+    </div>
+
+    <div class="field-gap">
+      <label for="to-email">Recipient email</label>
+      <input type="email" id="to-email" placeholder="someone@example.com" />
+    </div>
+
+    <div class="field-gap">
+      <label for="email-subject">Subject <span style="font-weight:400;color:#aeaeb2;">(optional)</span></label>
+      <input type="text" id="email-subject" placeholder="Leave blank to auto-fill" />
+    </div>
+
+    <div class="field-gap">
+      <label for="email-body">Message <span style="font-weight:400;color:#aeaeb2;">(optional)</span></label>
+      <textarea id="email-body" placeholder="Add a note to go with the files…" style="min-height:90px;"></textarea>
+    </div>
+
+    <button class="btn btn-send" id="compose-btn" onclick="doCompose()">
+      <span id="compose-label">Open in Mail</span>
+    </button>
+    <div class="status" id="compose-status"></div>
+  </div>
+</div>
+
+<script>
+  // --- State ---
+  let selectedFiles = []; // [{ path, name }]
+
+  // --- Root folders ---
+  let rootFolders = JSON.parse(localStorage.getItem('root-folders') || '[]');
+  function saveRoots() { localStorage.setItem('root-folders', JSON.stringify(rootFolders)); }
+
+  function renderRoots() {
+    const list = document.getElementById('roots-list');
+    if (!rootFolders.length) {
+      list.innerHTML = '<div class="empty-roots">No folders pinned — searches will scan your home directory.</div>';
+      return;
+    }
+    list.innerHTML = rootFolders.map((r, i) => `
+      <div class="root-item">
+        <span>📂 ${r}</span>
+        <button class="btn-remove" onclick="removeRoot(${i})">✕</button>
+      </div>`).join('');
+  }
+
+  function addRoot() {
+    const input = document.getElementById('new-root');
+    const val = input.value.trim();
+    if (!val || rootFolders.includes(val)) { input.value = ''; return; }
+    rootFolders.push(val); saveRoots(); input.value = ''; renderRoots();
+  }
+
+  function removeRoot(i) { rootFolders.splice(i, 1); saveRoots(); renderRoots(); }
+  document.getElementById('new-root').addEventListener('keydown', e => { if (e.key === 'Enter') addRoot(); });
+  renderRoots();
+
+  // Persist recipient email
+
+  // --- Helpers ---
+  function fileIcon(path) {
+    const ext = path.split('.').pop().toLowerCase();
+    if (ext === 'pdf') return '📄';
+    if (['doc','docx'].includes(ext)) return '📝';
+    if (['ppt','pptx'].includes(ext)) return '📊';
+    return '📁';
+  }
+
+  function shortPath(full) {
+    const home = full.match(/^\/Users\/[^/]+/)?.[0] || '';
+    return home ? '~' + full.slice(home.length) : full;
+  }
+
+  // --- Tray ---
+  function renderTray() {
+    const trayCard = document.getElementById('tray-card');
+    const tray = document.getElementById('tray');
+    const composeTray = document.getElementById('compose-tray');
+
+    if (!selectedFiles.length) {
+      trayCard.style.display = 'none';
+      return;
+    }
+
+    trayCard.style.display = 'block';
+
+    const itemsHtml = selectedFiles.map((f, i) => `
+      <div class="tray-item">
+        <span class="tray-item-icon">${fileIcon(f.path)}</span>
+        <div style="flex:1;min-width:0;">
+          <div class="tray-item-name">${f.name}</div>
+          <div class="tray-item-path">${shortPath(f.path)}</div>
+        </div>
+        <button class="tray-remove" onclick="removeFromTray(${i})">✕</button>
+      </div>`).join('');
+
+    const countHtml = `<div class="tray-count">${selectedFiles.length} file${selectedFiles.length > 1 ? 's' : ''} selected</div>`;
+    tray.innerHTML = countHtml + itemsHtml;
+
+    // Mirror into compose section (no remove buttons there)
+    const composeTrayItems = selectedFiles.map(f => `
+      <div class="tray-item">
+        <span class="tray-item-icon">${fileIcon(f.path)}</span>
+        <div style="flex:1;min-width:0;">
+          <div class="tray-item-name">${f.name}</div>
+          <div class="tray-item-path">${shortPath(f.path)}</div>
+        </div>
+      </div>`).join('');
+    composeTray.innerHTML = composeTrayItems;
+  }
+
+  function removeFromTray(i) {
+    const removedPath = selectedFiles[i].path;
+    selectedFiles.splice(i, 1);
+    renderTray();
+    // Un-highlight in results list if visible
+    document.querySelectorAll('.results-list li').forEach(li => {
+      if (li.dataset.path === removedPath) li.classList.remove('added');
+    });
+    if (!selectedFiles.length) {
+      document.getElementById('email-section').style.display = 'none';
+    }
+  }
+
+  function addToTray(path) {
+    if (selectedFiles.find(f => f.path === path)) return; // already added
+    selectedFiles.push({ path, name: path.split('/').pop() });
+    renderTray();
+  }
+
+  function showCompose() {
+    renderTray();
+    document.getElementById('email-section').style.display = 'block';
+    document.getElementById('email-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  // --- Search ---
+  async function doSearch() {
+    const query = document.getElementById('query').value.trim();
+    if (!query) return;
+
+    const btn = document.getElementById('search-btn');
+    const label = document.getElementById('search-label');
+    const status = document.getElementById('search-status');
+    const resultsList = document.getElementById('results');
+    const badgeWrap = document.getElementById('folder-badge-wrap');
+
+    btn.disabled = true;
+    label.innerHTML = '<span class="spinner"></span> Searching…';
+    status.textContent = '';
+    status.className = 'status';
+    resultsList.innerHTML = '';
+    badgeWrap.innerHTML = '';
+
+    try {
+      const res = await fetch('/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, root_folders: rootFolders }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        status.textContent = data.detail || 'Search failed.';
+        status.className = 'status error';
+        return;
+      }
+
+      badgeWrap.innerHTML = `<div class="folder-badge">📂 ${shortPath(data.folder)}</div>`;
+
+      if (!data.matches.length) {
+        status.textContent = 'No matching files found in that folder.';
+        return;
+      }
+
+      status.textContent = `${data.matches.length} file${data.matches.length > 1 ? 's' : ''} found — click to add to attachments.`;
+
+      data.matches.forEach(path => {
+        const li = document.createElement('li');
+        li.dataset.path = path;
+        const alreadyAdded = !!selectedFiles.find(f => f.path === path);
+        if (alreadyAdded) li.classList.add('added');
+        const name = path.split('/').pop();
+        li.innerHTML = `
+          <span class="file-icon">${fileIcon(path)}</span>
+          <span class="file-info">
+            <div class="file-name">${name}</div>
+            <div class="file-path">${shortPath(path)}</div>
+          </span>
+          <span class="add-badge">${alreadyAdded ? '✓ Added' : '+ Add'}</span>`;
+        li.onclick = () => {
+          if (li.classList.contains('added')) return;
+          li.classList.add('added');
+          li.querySelector('.add-badge').textContent = '✓ Added';
+          addToTray(path);
+        };
+        resultsList.appendChild(li);
+      });
+
+    } catch (e) {
+      status.textContent = 'Could not reach the server.';
+      status.className = 'status error';
+    } finally {
+      btn.disabled = false;
+      label.textContent = 'Search';
+    }
+  }
+
+  // --- Compose ---
+  async function doCompose() {
+    if (!selectedFiles.length) return;
+
+    const toEmail = document.getElementById('to-email').value.trim();
+    if (!toEmail) {
+      const s = document.getElementById('compose-status');
+      s.textContent = 'Please enter a recipient email.';
+      s.className = 'status error';
+      return;
+    }
+
+    const btn = document.getElementById('compose-btn');
+    const label = document.getElementById('compose-label');
+    const status = document.getElementById('compose-status');
+
+    btn.disabled = true;
+    label.innerHTML = '<span class="spinner"></span> Opening Mail…';
+    status.textContent = '';
+    status.className = 'status';
+
+    try {
+      const res = await fetch('/compose', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          file_paths: selectedFiles.map(f => f.path),
+          to_email: toEmail,
+          subject: document.getElementById('email-subject').value.trim(),
+          body: document.getElementById('email-body').value.trim(),
+        }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        status.textContent = data.detail || 'Failed to open Mail.';
+        status.className = 'status error';
+      } else {
+        status.textContent = `Draft opened in Mail with ${selectedFiles.length} attachment${selectedFiles.length > 1 ? 's' : ''} — review and hit Send!`;
+        status.className = 'status success';
+      }
+    } catch (e) {
+      status.textContent = 'Could not reach the server.';
+      status.className = 'status error';
+    } finally {
+      btn.disabled = false;
+      label.textContent = 'Open in Mail';
+    }
+  }
+
+  document.getElementById('query').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) doSearch();
+  });
+</script>
+</body>
+</html>
